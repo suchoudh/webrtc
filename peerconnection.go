@@ -773,7 +773,7 @@ func (pc *PeerConnection) SetRemoteDescription(desc SessionDescription) error {
 
 	// Start the networking in a new routine since it will block until
 	// the connection is actually established.
-	pc.startTransports(iceRole, dtlsRoleFromRemoteSDP(desc.parsed), remoteUfrag, remotePwd, fingerprint, fingerprintHash, currentTransceivers, trackDetailsFromSDP(pc.log, desc.parsed))
+	pc.startTransports(iceRole, dtlsRoleFromRemoteSDP(desc.parsed), remoteUfrag, remotePwd, fingerprint, fingerprintHash, currentTransceivers, trackDetailsFromSDP(pc.log, desc.parsed), haveApplicationMediaSection(desc.parsed))
 	return nil
 }
 
@@ -1565,7 +1565,7 @@ func (pc *PeerConnection) GetStats() StatsReport {
 }
 
 // Start all transports. PeerConnection now has enough state
-func (pc *PeerConnection) startTransports(iceRole ICERole, dtlsRole DTLSRole, remoteUfrag, remotePwd, fingerprint, fingerprintHash string, currentTransceivers []*RTPTransceiver, incomingTracks map[uint32]trackDetails) {
+func (pc *PeerConnection) startTransports(iceRole ICERole, dtlsRole DTLSRole, remoteUfrag, remotePwd, fingerprint, fingerprintHash string, currentTransceivers []*RTPTransceiver, incomingTracks map[uint32]trackDetails, startSCTP bool) {
 	pc.negotationLock.Lock()
 
 	go func() {
@@ -1600,7 +1600,10 @@ func (pc *PeerConnection) startTransports(iceRole ICERole, dtlsRole DTLSRole, re
 		pc.startRTPReceivers(incomingTracks, currentTransceivers)
 		pc.startRTPSenders(currentTransceivers)
 		pc.drainSRTP()
-		pc.startSCTP()
+
+		if startSCTP {
+			pc.startSCTP()
+		}
 	}()
 }
 

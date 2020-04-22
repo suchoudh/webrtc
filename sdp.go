@@ -399,3 +399,13 @@ func extractICEDetails(desc *sdp.SessionDescription) (string, string, []ICECandi
 
 	return remoteUfrag, remotePwd, candidates, nil
 }
+
+func haveApplicationMediaSection(desc *sdp.SessionDescription) bool {
+	for _, m := range desc.MediaDescriptions {
+		if m.MediaName.Media == "application" {
+			return true
+		}
+	}
+
+	return false
+}
