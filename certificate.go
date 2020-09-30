@@ -9,19 +9,21 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"math/big"
 	"time"
 
 	"github.com/pion/dtls/v2/pkg/crypto/fingerprint"
-	"github.com/pion/webrtc/v2/pkg/rtcerr"
+	"github.com/pion/webrtc/v3/pkg/rtcerr"
 )
 
 // Certificate represents a x509Cert used to authenticate WebRTC communications.
 type Certificate struct {
 	privateKey crypto.PrivateKey
 	x509Cert   *x509.Certificate
+	statsID    string
 }
 
 // NewCertificate generates a new x509 compliant Certificate to be used
@@ -55,7 +57,7 @@ func NewCertificate(key crypto.PrivateKey, tpl x509.Certificate) (*Certificate, 
 		return nil, &rtcerr.UnknownError{Err: err}
 	}
 
-	return &Certificate{privateKey: key, x509Cert: cert}, nil
+	return &Certificate{privateKey: key, x509Cert: cert, statsID: fmt.Sprintf("certificate-%d", time.Now().UnixNano())}, nil
 }
 
 // Equals determines if two certificates are identical by comparing both the
@@ -155,5 +157,29 @@ func GenerateCertificate(secretKey crypto.PrivateKey) (*Certificate, error) {
 //
 // This can be used if you want to share a certificate across multiple PeerConnections
 func CertificateFromX509(privateKey crypto.PrivateKey, certificate *x509.Certificate) Certificate {
-	return Certificate{privateKey, certificate}
+	return Certificate{privateKey, certificate, fmt.Sprintf("certificate-%d", time.Now().UnixNano())}
+}
+
+func (c Certificate) collectStats(report *statsReportCollector) error {
+	report.Collecting()
+
+	fingerPrintAlgo, err := c.GetFingerprints()
+	if err  != nil {
+		return err
+	}
+
+	base64Certificate := base64.RawURLEncoding.EncodeToString(c.x509Cert.Raw)
+
+	stats := CertificateStats{
+		Timestamp:            statsTimestampFrom(time.Now()),
+		Type:                 StatsTypeCertificate,
+		ID:                   c.statsID,
+		Fingerprint:          fingerPrintAlgo[0].Value,
+		FingerprintAlgorithm: fingerPrintAlgo[0].Algorithm,
+		Base64Certificate:    base64Certificate,
+		IssuerCertificateID:  c.x509Cert.Issuer.String(),
+	}
+
+	report.Collect(stats.ID, stats)
+	return nil
 }

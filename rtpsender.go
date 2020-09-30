@@ -4,6 +4,7 @@ package webrtc
 
 import (
 	"fmt"
+	"io"
 	"sync"
 
 	"github.com/pion/rtcp"
@@ -17,6 +18,11 @@ type RTPSender struct {
 	rtcpReadStream *srtp.ReadStreamSRTCP
 
 	transport *DTLSTransport
+
+	// TODO(sgotti) remove this when in future we'll avoid replacing
+	// a transceiver sender since we can just check the
+	// transceiver negotiation status
+	negotiated bool
 
 	// A reference to the associated api object
 	api *API
@@ -49,6 +55,18 @@ func (api *API) NewRTPSender(track *Track, transport *DTLSTransport) (*RTPSender
 	}, nil
 }
 
+func (r *RTPSender) isNegotiated() bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.negotiated
+}
+
+func (r *RTPSender) setNegotiated() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.negotiated = true
+}
+
 // Transport returns the currently-configured *DTLSTransport or nil
 // if one has not yet been configured
 func (r *RTPSender) Transport() *DTLSTransport {
@@ -62,6 +80,12 @@ func (r *RTPSender) Track() *Track {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return r.track
+}
+
+func (r *RTPSender) setTrack(track *Track) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.track = track
 }
 
 // Send Attempts to set the parameters controlling the sending of media.
@@ -124,8 +148,12 @@ func (r *RTPSender) Stop() error {
 
 // Read reads incoming RTCP for this RTPReceiver
 func (r *RTPSender) Read(b []byte) (n int, err error) {
-	<-r.sendCalled
-	return r.rtcpReadStream.Read(b)
+	select {
+	case <-r.sendCalled:
+		return r.rtcpReadStream.Read(b)
+	case <-r.stopCalled:
+		return 0, io.ErrClosedPipe
+	}
 }
 
 // ReadRTCP is a convenience method that wraps Read and unmarshals for you
